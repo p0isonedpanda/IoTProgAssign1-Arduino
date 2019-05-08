@@ -10,7 +10,7 @@
   BAUD_RATE is the serial rate
 */
 const unsigned int SENSOR_PIN = A0;
-const unsigned int BAUD_RATE = 9600;
+const unsigned int BAUD_RATE = 57600;
 
 /*
   New one Wire bus
@@ -28,7 +28,7 @@ const int RECV_PIN = 12;
 int FAN_PIN = 11;
 int BUZZER_PIN = 1;
 int number = 0;
-const byte numChars = 32;
+const byte numChars = 8;
 char receivedChars[numChars];
 int threashold = 20;
 boolean newData = false;
@@ -92,7 +92,6 @@ void setup() {
 void loop() {
   // put your main code here, to run repeatedly:
   SmartFan();
-  delay(5000);
 }
 /*
  * SMART FAN
@@ -114,31 +113,80 @@ void SmartFan(){
   {
     //Serial.print("Temperature for the device 1 (index 0) is: ");
     Serial.println(tempC);
-  } 
-  else
-  {
-    Serial.println("Error: Could not read temperature data");
   }
-  recvWithEndMarker();
-  updateThreashold();
-  Serial.println(threashold);
-  if(tempC > threashold)
+  //recvWithEndMarker();
+  //updateThreashold();
+  //Serial.println(threashold);
+  if(Serial.available() > 0)
   {
-    digitalWrite(FAN_PIN,HIGH);
+    byte bstatus = Serial.read();
+    switch(bstatus){
+      case '1':
+        digitalWrite(FAN_PIN,HIGH);
+        break;
+      case '0':
+        digitalWrite(FAN_PIN,LOW);
+        break;
+    }
+    /*if(a = 0)
+    {
+      digitalWrite(FAN_PIN,HIGH);
+    }
+    else
+    {
+        digitalWrite(FAN_PIN,LOW);
+    }*/
   }
-  else
-  {
-      digitalWrite(FAN_PIN,LOW);
-  }
+}
+
+void recvWithEndMarker(){
+    static byte ndx = 0;
+    char endMarker = '\n';
+    char rc;
+   
+    while(Serial.available() != 0 && newData == false) {
+        rc = Serial.read();
+
+        if (rc != endMarker) {
+            receivedChars[ndx] = rc;
+            ndx++;
+            if (ndx >= numChars) {
+                ndx = numChars - 1;
+            }
+        }
+        else {
+            receivedChars[ndx] = '\0'; // terminate the string
+            ndx = 0;
+            newData = true;
+        }
+    }
+}
+
+void updateThreashold(){
+  if (newData == true){
+      threashold = 0;
+      threashold = atoi(receivedChars);
+      newData = false;
+    }
 }
 
 /*
  * MEMORY GAME
  * 
  * CURRENTLY NOT IMPLEMENTED
-*/
-void MemoryGame(){
-    /* Reading from Terminal */
+*/void MemoryGame(){
+  // pinMode(buzzer, OUTPUT); UNCOMMENT
+  int wait_time = 0.5;     //time to wait between beeps, in seconds.
+  int length = 0.4;        //length of time of beeps, in seconds.
+  int pitch_variation = 0; //how much the beeps change in tone.
+  //TODO add a scoring system.
+  int current_stage = generate_stage();
+  for (int i = 0; i < 5; i++)
+  {
+      process_level(current_stage, wait_time, length, pitch_variation);
+      increase_difficulty(i, wait_time, length, pitch_variation);
+  }
+  /* Reading from Terminal */
   if(irrecv.decode(&results))
   {
     
@@ -165,34 +213,79 @@ void MemoryGame(){
     number = 0;
   }
 }
+int generate_stage()
+{
+    return (rand() % (9)) + 1;
+}
 
-void recvWithEndMarker(){
-    static byte ndx = 0;
-    char endMarker = '\n';
-    char rc;
-   
-    if (Serial.available() > 0) {
-        rc = Serial.read();
+int generate_pitch(int pitch_variation)
+{
+    return 1000 * (rand() % pitch_variation);
+}
+//processes the ir input and returns a number representing the player's answer.
+int process_input()
+{
+    int answer = -1; //TODO this is gross but it works
+    //loop until an answer is found
+    while (answer == -1)
+    {
+        //TODO get data
+        printf("Your answer:\n > ");
+        scanf("%d", &answer);
+    }
+    return answer;
+}
 
-        if (rc != endMarker) {
-            receivedChars[ndx] = rc;
-            ndx++;
-            if (ndx >= numChars) {
-                ndx = numChars - 1;
-            }
+//tell the arduino to beep x times (controlled by stage variable)
+void play_level(int stage, int wait_time, int length, int pitch_variation)
+{
+    //conversion to milliseconds
+    int _wait_time = wait_time * 1000;
+    int _length = length * 1000;
+    for (int i = 0; i < stage; i++)
+    {
+        // tone(buzzer, generate_pitch(pitch_variation)); // Send 1KHz sound signal... UNCOMMENT
+        // delay(_length);                                // ...for 1 sec
+        // noTone(buzzer);                                // Stop sound...
+        // delay(_wait_time);                             // ...for 1sec
+        //tell the thing to beep (with wait_time between beeps, and length of beep)
+        printf("beep ");
+    }
+    printf("\n");
+}
+//print the answer of the level to the display.
+void show_answer(int stage)
+{
+    //TODO
+    printf("answer is %d\n", stage);
+}
+
+//run through the level
+void process_level(int current_stage, int wait_time, int length, int pitch_variation)
+{
+    int stage = 0;
+    //TODO add a cap for the number of attempts at a stage.
+    while (stage < 3)
+    { //checks for three consecutive correct answers
+        play_level(current_stage, wait_time, length, pitch_variation);
+        int answer = process_input();
+        show_answer(current_stage);
+        if (answer == current_stage)
+        {
+            printf("Correct!\n");
+            //show them the answer, and iterate the stage by one to progress them.
+            stage += 1;
         }
-        else {
-            receivedChars[ndx] = '\0'; // terminate the string
-            ndx = 0;
-            newData = true;
-        }
+        //else, show the player the answer, generate a new stage and get them to try again
+        current_stage = generate_stage();
     }
 }
 
-void updateThreashold(){
-  if (newData == true){
-      threashold = 0;
-      threashold = atoi(receivedChars);
-      newData = false;
-    }
+void increase_difficulty(int scalar, int wait_time, int length, int pitch_variation)
+{
+    //TODO improve
+    wait_time -= scalar * 0.1;
+    length -= scalar * 0.1;
+    pitch_variation *= 1.5;
+    printf("level difficulty increased\n");
 }
