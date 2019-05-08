@@ -1,7 +1,7 @@
 #include <NewTone.h> // Needed as the original tone library conflicts with the IR remote libary
 #include <SevSeg.h> //Drives the 7 segment display
 #include <IRremote.h> //IR remote libray
-//#include <math.h> //Legacy operations
+#include <math.h> //Legacy operations
 #include <OneWire.h> //Handling new temp sensor as it is a one wire sensor
 #include <DallasTemperature.h> //prewritten libray to handle the one wire information to convert to temp
 
@@ -112,7 +112,7 @@ void SmartFan(){
   if(tempC != DEVICE_DISCONNECTED_C) 
   {
     //Serial.print("Temperature for the device 1 (index 0) is: ");
-    Serial.println(tempC);
+    Serial.println(round(tempC));
   }
   //recvWithEndMarker();
   //updateThreashold();
