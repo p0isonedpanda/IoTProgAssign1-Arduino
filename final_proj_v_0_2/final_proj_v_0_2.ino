@@ -9,28 +9,46 @@
   SENSOR_PIN legacy as it was the old sensor
   BAUD_RATE is the serial rate
 */
-const unsigned int SENSOR_PIN = A0;
+//const unsigned int SENSOR_PIN = A0;
 const unsigned int BAUD_RATE = 57600;
 
 /*
   New one Wire bus
 */
-#define ONE_WIRE_BUS 2
+#define ONE_WIRE_BUS A0
 
 /* 
   RECV_PIN = IR reciever 
   FAN is Fan pin
   BUZZER is the buzzer pin
-  number is testing of the 7 segment display
 
 */
 const int RECV_PIN = 12;
-int FAN_PIN = 11;
-int BUZZER_PIN = 1;
-int number = 0;
+const int FAN_PIN = 11;
+const int BUZZER_PIN = 2;
+/*
+ * BUTTON
+ * BUTTON_PIN = button pin
+ * the following variables are unsigned longs because the time, measured in
+ * milliseconds, will quickly become a bigger number than can be stored in an int.
+ * 
+*/
+const int BUTTON_PIN = 13;
+int state = LOW;
+int buttonState;             // the current reading from the input pin
+int lastButtonState = LOW;   // the previous reading from the input pin
+unsigned long lastDebounceTime = 0;  // the last time the output pin was toggled
+unsigned long debounceDelay = 50;    // the debounce time; increase if the output flickers
+
+/*
+ *  IR REMOTE CODE STRING and Serial interpretation 
+*/
+String IRResult = "";
+int DIFFICULTY;
+int AmountOfBeeps;
+bool GameStarted = false;
 const byte numChars = 8;
-char receivedChars[numChars];
-int threashold = 20;
+char receivedChars[numChars];   // an array to store the received data
 boolean newData = false;
 
 /*
@@ -76,26 +94,47 @@ void setup() {
   sevseg.setBrightness(90);
   irrecv.enableIRIn();
   irrecv.blink13(true);
-  //pinMode(SENSOR_PIN, INPUT);
+  pinMode(BUTTON_PIN, INPUT);
   pinMode(FAN_PIN, OUTPUT);
-  pinMode(BUZZER_PIN, OUTPUT);
   digitalWrite(FAN_PIN,LOW);
   sensors.begin();
+  noNewTone(BUZZER_PIN);
 }
 /*
  * 
  * LOOP
  * first detect if the button has been pressed and wait for the state to be updated then depending on which state do smart fan or
  * memory game.
- * 
+ * Button code based off: https://www.arduino.cc/en/tutorial/switch and https://forum.arduino.cc/index.php?topic=506473.0
 */
 void loop() {
   // put your main code here, to run repeatedly:
-  SmartFan();
+  int reading = digitalRead(BUTTON_PIN);
+
+  if(reading != lastButtonState){
+    lastDebounceTime = millis();
+  }
+  if((millis() - lastDebounceTime) > debounceDelay){
+    if(reading != buttonState){
+      buttonState = reading;
+
+      if(buttonState == HIGH){
+        state = !state;
+      }
+    }
+  }
+  lastButtonState = reading;
+  switch(state){
+  case HIGH:
+    SmartFan();
+    break;
+  case LOW:
+    MemoryGame();
+    break;
+  }
 }
 /*
  * SMART FAN
- * 
  * Simple smart fan device that uses a one wire device to access the temperatures of the outside then print to terminal.
  * Then checking whether the temperature is over 20C and turning the fan on.
 */
@@ -105,187 +144,159 @@ void SmartFan(){
     Serial.print("T");
     Serial.println(temp);
   */
-  //Serial.print("Requesting temperatures...");
+  GameStarted = false;
   sensors.requestTemperatures(); // Send the command to get temperatures
-  //Serial.println("DONE");
   float tempC = sensors.getTempCByIndex(0);
   if(tempC != DEVICE_DISCONNECTED_C) 
   {
-    //Serial.print("Temperature for the device 1 (index 0) is: ");
     Serial.println(round(tempC));
   }
-  //recvWithEndMarker();
-  //updateThreashold();
-  //Serial.println(threashold);
   if(Serial.available() > 0)
   {
-    byte bstatus = Serial.read();
+    int bstatus = Serial.read() - '0';
     switch(bstatus){
-      case '1':
+      case 1:
         digitalWrite(FAN_PIN,HIGH);
         break;
-      case '0':
+      case 0:
         digitalWrite(FAN_PIN,LOW);
         break;
     }
-    /*if(a = 0)
-    {
-      digitalWrite(FAN_PIN,HIGH);
-    }
-    else
-    {
-        digitalWrite(FAN_PIN,LOW);
-    }*/
   }
 }
-
-void recvWithEndMarker(){
-    static byte ndx = 0;
-    char endMarker = '\n';
-    char rc;
-   
-    while(Serial.available() != 0 && newData == false) {
-        rc = Serial.read();
-
-        if (rc != endMarker) {
-            receivedChars[ndx] = rc;
-            ndx++;
-            if (ndx >= numChars) {
-                ndx = numChars - 1;
-            }
-        }
-        else {
-            receivedChars[ndx] = '\0'; // terminate the string
-            ndx = 0;
-            newData = true;
-        }
-    }
-}
-
-void updateThreashold(){
-  if (newData == true){
-      threashold = 0;
-      threashold = atoi(receivedChars);
-      newData = false;
-    }
-}
-
 /*
  * MEMORY GAME
  * 
- * CURRENTLY NOT IMPLEMENTED
-*/void MemoryGame(){
-  // pinMode(buzzer, OUTPUT); UNCOMMENT
-  int wait_time = 0.5;     //time to wait between beeps, in seconds.
-  int length = 0.4;        //length of time of beeps, in seconds.
-  int pitch_variation = 0; //how much the beeps change in tone.
-  //TODO add a scoring system.
-  int current_stage = generate_stage();
-  for (int i = 0; i < 5; i++)
-  {
-      process_level(current_stage, wait_time, length, pitch_variation);
-      increase_difficulty(i, wait_time, length, pitch_variation);
-  }
-  /* Reading from Terminal */
-  if(irrecv.decode(&results))
-  {
-    
-    Serial.print("I");
-    Serial.println(results.value, HEX);
-    if(results.value == "FF9867"){
-      digitalWrite(BUZZER_PIN,HIGH);
-      delay(100);
-      digitalWrite(BUZZER_PIN,LOW);
-      delay(100);
-      digitalWrite(BUZZER_PIN,HIGH);
-      delay(100);
-      digitalWrite(BUZZER_PIN,LOW);
-      delay(100);
-     //NewTone(BUZZER,6000,100);
+ * CURRENTLY IMPLMENTED
+ * 
+ * The users sends a code <DIFFICULT BEEBAMOUNT> then the arduino uses the first as how long is the delay
+ * then the users is prompted to enter a number on the remote as to how many beeps they though it was
+ * the actual amount is then displayed on then 7 segment display.
+*/
+void MemoryGame(){
+  /* Recieving from Pi*/
+  StartGame();
+  if(GameStarted){
+    noNewTone(BUZZER_PIN);
+    recvWithStartEndMarkers();
+    if(newData){
+      /* 
+       *  If the pi has issued a command it will take the first char as difficulty
+       *  and the second as the amount of beeps
+      */
+      if(receivedChars[0] == 'a'){
+        DIFFICULTY = 250;
+      } else if(receivedChars[0] == 'b'){
+        DIFFICULTY = 100;
+      } else if(receivedChars[0] == 'c'){
+        DIFFICULTY = 50;
+      }
+      //Deletes the '0' at the end of the conversion
+      AmountOfBeeps = receivedChars[1] - '0';
+      for(int i = 0; i < AmountOfBeeps; i++)
+      {
+        //Serial.println("BUZZ");
+        //Serial.println(DIFFICULTY);
+        NewTone(BUZZER_PIN,1000);
+        delay(DIFFICULTY);
+        noNewTone(BUZZER_PIN);
+        delay(DIFFICULTY);
+      }
+      newData = false;
     }
-    irrecv.resume();
-  }
-  sevseg.setNumber(number);
-  sevseg.refreshDisplay();
-  number++;
-  if(number > 9)
-  {
-    number = 0;
-  }
-}
-int generate_stage()
-{
-    return (rand() % (9)) + 1;
-}
-
-int generate_pitch(int pitch_variation)
-{
-    return 1000 * (rand() % pitch_variation);
-}
-//processes the ir input and returns a number representing the player's answer.
-int process_input()
-{
-    int answer = -1; //TODO this is gross but it works
-    //loop until an answer is found
-    while (answer == -1)
+    //Waits for user input and then displays the answer
+    if(irrecv.decode(&results))
     {
-        //TODO get data
-        printf("Your answer:\n > ");
-        scanf("%d", &answer);
+      IRResult = String(results.value, HEX);
+      //Serial.println(IRResult);
+      if(IRResult == "ff30cf"){
+        Serial.println("1");
+      } 
+      else if(IRResult == "ff18e7"){
+        Serial.println("2");
+      } 
+      else if(IRResult == "ff7a85"){
+        Serial.println("3");
+      } 
+      else if(IRResult == "ff10ef"){
+        Serial.println("4");
+      } 
+      else if(IRResult == "ff38c7"){
+        Serial.println("5");
+      } 
+      else if(IRResult == "ff5aa5"){
+        Serial.println("6");
+      } 
+      else if(IRResult == "ff42bd"){
+        Serial.println("7");
+      } 
+      else if(IRResult == "ff4ab5"){
+        Serial.println("8");
+      } 
+      else if(IRResult == "ff52ad"){
+        Serial.println("9");
+      }
+      sevseg.setNumber(AmountOfBeeps);
+      sevseg.refreshDisplay();
+      irrecv.resume();
     }
-    return answer;
+  }
 }
 
-//tell the arduino to beep x times (controlled by stage variable)
-void play_level(int stage, int wait_time, int length, int pitch_variation)
-{
-    //conversion to milliseconds
-    int _wait_time = wait_time * 1000;
-    int _length = length * 1000;
-    for (int i = 0; i < stage; i++)
-    {
-        // tone(buzzer, generate_pitch(pitch_variation)); // Send 1KHz sound signal... UNCOMMENT
-        // delay(_length);                                // ...for 1 sec
-        // noTone(buzzer);                                // Stop sound...
-        // delay(_wait_time);                             // ...for 1sec
-        //tell the thing to beep (with wait_time between beeps, and length of beep)
-        printf("beep ");
+/*
+ * START GAME
+ * Waits till a zero is sent to access the game features.
+ * updates a bool accordingly
+*/
+bool StartGame(){
+  if(Serial.available() > 0 && GameStarted == false)
+  {
+    //Serial.println("GAME STARTED");
+    int bstatus = Serial.read() - '0';
+    switch(bstatus){
+      case 1:
+        GameStarted = false;
+        break;
+      case 0:
+        GameStarted = true;
+        break;
     }
-    printf("\n");
-}
-//print the answer of the level to the display.
-void show_answer(int stage)
-{
-    //TODO
-    printf("answer is %d\n", stage);
+  }
 }
 
-//run through the level
-void process_level(int current_stage, int wait_time, int length, int pitch_variation)
-{
-    int stage = 0;
-    //TODO add a cap for the number of attempts at a stage.
-    while (stage < 3)
-    { //checks for three consecutive correct answers
-        play_level(current_stage, wait_time, length, pitch_variation);
-        int answer = process_input();
-        show_answer(current_stage);
-        if (answer == current_stage)
-        {
-            printf("Correct!\n");
-            //show them the answer, and iterate the stage by one to progress them.
-            stage += 1;
+/*
+ * Terminal recieving the string of buzzer information 
+ * code used form: https://forum.arduino.cc/index.php?topic=396450
+*/
+
+void recvWithStartEndMarkers() {
+    static boolean recvInProgress = false;
+    static byte ndx = 0;
+    char startMarker = '<';
+    char endMarker = '>';
+    char rc;
+ 
+    while (Serial.available() > 0 && newData == false) {
+        rc = Serial.read();
+
+        if (recvInProgress == true) {
+            if (rc != endMarker) {
+                receivedChars[ndx] = rc;
+                ndx++;
+                if (ndx >= numChars) {
+                    ndx = numChars - 1;
+                }
+            }
+            else {
+                receivedChars[ndx] = '\0'; // terminate the string
+                recvInProgress = false;
+                ndx = 0;
+                newData = true;
+            }
         }
-        //else, show the player the answer, generate a new stage and get them to try again
-        current_stage = generate_stage();
-    }
-}
 
-void increase_difficulty(int scalar, int wait_time, int length, int pitch_variation)
-{
-    //TODO improve
-    wait_time -= scalar * 0.1;
-    length -= scalar * 0.1;
-    pitch_variation *= 1.5;
-    printf("level difficulty increased\n");
+        else if (rc == startMarker) {
+            recvInProgress = true;
+        }
+    }
 }
